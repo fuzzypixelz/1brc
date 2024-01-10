@@ -26,43 +26,83 @@ import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.file.Paths;
+import java.util.HashMap;
+import java.util.zip.CRC32C;
 
 public class CalculateAverage_fuzzypixelz {
     public static void main(String[] argv) throws IOException, InterruptedException {
-        MemorySegment indices = ARENA.allocateArray(ValueLayout.JAVA_LONG, (FILE_SIZE / 6) + 8);
         long dataOffset = 0;
         long indicesOffset = 0;
 
-        while (dataOffset < DATA.byteSize() - BYTE_VECTOR_SIZE) {
-            ByteVector vector =
+        while (dataOffset + BYTE_VECTOR_SIZE < DATA.byteSize()) {
+            final ByteVector vector =
                     ByteVector.fromMemorySegment(BYTE_VECTOR_SPECIES, DATA, dataOffset, ByteOrder.LITTLE_ENDIAN);
 
-            long lookup = vector.compare(VectorOperators.EQ, LF).toLong()
+            long lookup = vector.compare(VectorOperators.EQ, LINEFEED).toLong()
                     | vector.compare(VectorOperators.EQ, SEMICOLON).toLong();
 
-            long bitCount = Long.bitCount(lookup);
+            final long bitCount = Long.bitCount(lookup);
             long offset = indicesOffset;
             while (lookup != 0) {
-                indices.setAtIndex(ValueLayout.JAVA_LONG, offset++, dataOffset + Long.numberOfTrailingZeros(lookup));
+                INDICES.setAtIndex(ValueLayout.JAVA_LONG, offset++, dataOffset + Long.numberOfTrailingZeros(lookup));
                 lookup &= lookup - 1;
-                indices.setAtIndex(ValueLayout.JAVA_LONG, offset++, dataOffset + Long.numberOfTrailingZeros(lookup));
+                INDICES.setAtIndex(ValueLayout.JAVA_LONG, offset++, dataOffset + Long.numberOfTrailingZeros(lookup));
                 lookup &= lookup - 1;
-                indices.setAtIndex(ValueLayout.JAVA_LONG, offset++, dataOffset + Long.numberOfTrailingZeros(lookup));
+                INDICES.setAtIndex(ValueLayout.JAVA_LONG, offset++, dataOffset + Long.numberOfTrailingZeros(lookup));
                 lookup &= lookup - 1;
-                indices.setAtIndex(ValueLayout.JAVA_LONG, offset++, dataOffset + Long.numberOfTrailingZeros(lookup));
+                INDICES.setAtIndex(ValueLayout.JAVA_LONG, offset++, dataOffset + Long.numberOfTrailingZeros(lookup));
                 lookup &= lookup - 1;
-                indices.setAtIndex(ValueLayout.JAVA_LONG, offset++, dataOffset + Long.numberOfTrailingZeros(lookup));
+                INDICES.setAtIndex(ValueLayout.JAVA_LONG, offset++, dataOffset + Long.numberOfTrailingZeros(lookup));
                 lookup &= lookup - 1;
-                indices.setAtIndex(ValueLayout.JAVA_LONG, offset++, dataOffset + Long.numberOfTrailingZeros(lookup));
+                INDICES.setAtIndex(ValueLayout.JAVA_LONG, offset++, dataOffset + Long.numberOfTrailingZeros(lookup));
                 lookup &= lookup - 1;
-                indices.setAtIndex(ValueLayout.JAVA_LONG, offset++, dataOffset + Long.numberOfTrailingZeros(lookup));
+                INDICES.setAtIndex(ValueLayout.JAVA_LONG, offset++, dataOffset + Long.numberOfTrailingZeros(lookup));
                 lookup &= lookup - 1;
-                indices.setAtIndex(ValueLayout.JAVA_LONG, offset++, dataOffset + Long.numberOfTrailingZeros(lookup));
+                INDICES.setAtIndex(ValueLayout.JAVA_LONG, offset++, dataOffset + Long.numberOfTrailingZeros(lookup));
                 lookup &= lookup - 1;
             }
 
             indicesOffset += bitCount;
             dataOffset += BYTE_VECTOR_SIZE;
+        }
+
+        while (dataOffset < DATA.byteSize()) {
+            final byte value = DATA.get(ValueLayout.JAVA_BYTE, dataOffset);
+            if (value == SEMICOLON || value == LINEFEED) {
+                INDICES.setAtIndex(ValueLayout.JAVA_LONG, indicesOffset++, dataOffset);
+            }
+            dataOffset++;
+        }
+
+        long linestart = 0;
+        for (int offset = 0; offset < indicesOffset; offset += 2) {
+            final long semicolon = INDICES.getAtIndex(ValueLayout.JAVA_LONG, offset);
+            final long linefeed = INDICES.getAtIndex(ValueLayout.JAVA_LONG, offset + 1);
+
+            final MemorySegment rawName = DATA.asSlice(linestart, semicolon - linestart);
+            System.err.println(STR."`\{new String(rawName.toArray(ValueLayout.JAVA_BYTE))}`");
+
+            // NOTE: Four different temperature numbers are possible in the interval [-99.9, 99.9]
+            // as long as the fractional digit is always present:
+            // `  Y.X` (3 bytes)
+            // ` -Y.X` (4 bytes)
+            // ` ZY.X` (4 bytes)
+            // `-ZY.X` (5 bytes)
+            // Nothing to be done when length == 3 ^_^
+            final long rawTempLength = linefeed - semicolon - 1;
+            final byte x = DATA.get(ValueLayout.JAVA_BYTE, linefeed - 1);
+            final byte y = DATA.get(ValueLayout.JAVA_BYTE, linefeed - 3);
+            final byte z = DATA.get(ValueLayout.JAVA_BYTE, linefeed - 4);
+            int temp = (y - ZERO) * 10 + (x - ZERO);
+            final boolean rawTempSizeEq4 = rawTempLength == 4;
+            final boolean rawTempSizeEq5 = rawTempLength == 5;
+            final boolean zEqDash = z == DASH;
+            // To atone for your lack of boolean to int casts, your shall optimize this code Java!
+            temp += ((z - ZERO) * 100) * ((rawTempSizeEq4 && !zEqDash) || rawTempSizeEq5 ? 1 : 0);
+            temp *= -1 * ((rawTempSizeEq4 && zEqDash) || rawTempSizeEq5 ? 1 : -1);
+            System.err.println(STR."`\{((double) temp) / 10}`");
+
+            linestart = linefeed + 1;
         }
     }
 
@@ -85,7 +125,10 @@ public class CalculateAverage_fuzzypixelz {
             throw new RuntimeException("No measurements? >:(", exception);
         }
     }
+    private static final MemorySegment INDICES = ARENA.allocateArray(ValueLayout.JAVA_LONG, (FILE_SIZE / 6) + 8);
 
-    private static final byte LF = (byte) '\n';
+    private static final byte LINEFEED = (byte) '\n';
     private static final byte SEMICOLON = (byte) ';';
+    private static final byte DASH = (byte) '-';
+    private static final byte ZERO = (byte) '0';
 }
