@@ -26,17 +26,52 @@ import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.file.Paths;
-import java.util.HashMap;
-import java.util.zip.CRC32C;
 
 public class CalculateAverage_fuzzypixelz {
-    public static void main(String[] argv) throws IOException, InterruptedException {
-        long dataOffset = 0;
+    public static void main() throws InterruptedException {
+        Thread[] threads = new Thread[AVAILABLE_PROCESSORS];
+
+        System.err.println(STR."@file-size = \{FILE_SIZE}");
+
+        for (int i = 0; i < AVAILABLE_PROCESSORS; i++) {
+            long chunkOffset = i * CHUNK_SIZE;
+            long chunkLimit = Math.min((i + 1) * CHUNK_SIZE, FILE_SIZE);
+            System.err.println(STR."@chunk-offset = \{chunkOffset}");
+            System.err.println(STR."@chunk-limit = \{chunkLimit}");
+            final int threadNumber = i;
+            Thread thread = new Thread(() -> processChunk(chunkOffset, chunkLimit, threadNumber));
+            threads[i] = thread;
+            thread.start();
+        }
+        
+        for (Thread thread : threads) {
+            thread.join();
+        }
+    }
+
+    private static void processChunk(long chunkOffset, final long chunkLimit, final int threadNumber) {
+        final int threadDebugged = 1;
+        final MemorySegment indices = ARENA.allocateArray(ValueLayout.JAVA_LONG, ((chunkLimit - chunkOffset) / 6));
+
         long indicesOffset = 0;
 
-        while (dataOffset + BYTE_VECTOR_SIZE < DATA.byteSize()) {
+        if (chunkOffset != 0) {
+            chunkOffset--;
+            while (true) {
+                final byte value = CHUNKS.get(ValueLayout.JAVA_BYTE, chunkOffset);
+                if (value == LINEFEED) {
+                    chunkOffset++;
+                    break;
+                }
+                chunkOffset--;
+            }
+        }
+
+        long linestart = chunkOffset;
+
+        while (chunkOffset + BYTE_VECTOR_SIZE < chunkLimit) {
             final ByteVector vector =
-                    ByteVector.fromMemorySegment(BYTE_VECTOR_SPECIES, DATA, dataOffset, ByteOrder.LITTLE_ENDIAN);
+                    ByteVector.fromMemorySegment(BYTE_VECTOR_SPECIES, CHUNKS, chunkOffset, ByteOrder.LITTLE_ENDIAN);
 
             long lookup = vector.compare(VectorOperators.EQ, LINEFEED).toLong()
                     | vector.compare(VectorOperators.EQ, SEMICOLON).toLong();
@@ -44,43 +79,54 @@ public class CalculateAverage_fuzzypixelz {
             final long bitCount = Long.bitCount(lookup);
             long offset = indicesOffset;
             while (lookup != 0) {
-                INDICES.setAtIndex(ValueLayout.JAVA_LONG, offset++, dataOffset + Long.numberOfTrailingZeros(lookup));
+                indices.setAtIndex(ValueLayout.JAVA_LONG, offset, chunkOffset + Long.numberOfTrailingZeros(lookup));
+                offset++;
                 lookup &= lookup - 1;
-                INDICES.setAtIndex(ValueLayout.JAVA_LONG, offset++, dataOffset + Long.numberOfTrailingZeros(lookup));
+                indices.setAtIndex(ValueLayout.JAVA_LONG, offset, chunkOffset + Long.numberOfTrailingZeros(lookup));
+                offset++;
                 lookup &= lookup - 1;
-                INDICES.setAtIndex(ValueLayout.JAVA_LONG, offset++, dataOffset + Long.numberOfTrailingZeros(lookup));
+                indices.setAtIndex(ValueLayout.JAVA_LONG, offset, chunkOffset + Long.numberOfTrailingZeros(lookup));
+                offset++;
                 lookup &= lookup - 1;
-                INDICES.setAtIndex(ValueLayout.JAVA_LONG, offset++, dataOffset + Long.numberOfTrailingZeros(lookup));
+                indices.setAtIndex(ValueLayout.JAVA_LONG, offset, chunkOffset + Long.numberOfTrailingZeros(lookup));
+                offset++;
                 lookup &= lookup - 1;
-                INDICES.setAtIndex(ValueLayout.JAVA_LONG, offset++, dataOffset + Long.numberOfTrailingZeros(lookup));
+                indices.setAtIndex(ValueLayout.JAVA_LONG, offset, chunkOffset + Long.numberOfTrailingZeros(lookup));
+                offset++;
                 lookup &= lookup - 1;
-                INDICES.setAtIndex(ValueLayout.JAVA_LONG, offset++, dataOffset + Long.numberOfTrailingZeros(lookup));
+                indices.setAtIndex(ValueLayout.JAVA_LONG, offset, chunkOffset + Long.numberOfTrailingZeros(lookup));
+                offset++;
                 lookup &= lookup - 1;
-                INDICES.setAtIndex(ValueLayout.JAVA_LONG, offset++, dataOffset + Long.numberOfTrailingZeros(lookup));
+                indices.setAtIndex(ValueLayout.JAVA_LONG, offset, chunkOffset + Long.numberOfTrailingZeros(lookup));
+                offset++;
                 lookup &= lookup - 1;
-                INDICES.setAtIndex(ValueLayout.JAVA_LONG, offset++, dataOffset + Long.numberOfTrailingZeros(lookup));
+                indices.setAtIndex(ValueLayout.JAVA_LONG, offset, chunkOffset + Long.numberOfTrailingZeros(lookup));
+                offset++;
                 lookup &= lookup - 1;
             }
 
             indicesOffset += bitCount;
-            dataOffset += BYTE_VECTOR_SIZE;
+            chunkOffset += BYTE_VECTOR_SIZE;
         }
 
-        while (dataOffset < DATA.byteSize()) {
-            final byte value = DATA.get(ValueLayout.JAVA_BYTE, dataOffset);
+        while (chunkOffset < chunkLimit) {
+            final byte value = CHUNKS.get(ValueLayout.JAVA_BYTE, chunkOffset);
             if (value == SEMICOLON || value == LINEFEED) {
-                INDICES.setAtIndex(ValueLayout.JAVA_LONG, indicesOffset++, dataOffset);
+                indices.setAtIndex(ValueLayout.JAVA_LONG, indicesOffset, chunkOffset);
+                indicesOffset++;
             }
-            dataOffset++;
+            chunkOffset++;
         }
 
-        long linestart = 0;
-        for (int offset = 0; offset < indicesOffset; offset += 2) {
-            final long semicolon = INDICES.getAtIndex(ValueLayout.JAVA_LONG, offset);
-            final long linefeed = INDICES.getAtIndex(ValueLayout.JAVA_LONG, offset + 1);
+        if (indicesOffset % 2 == 1) {
+            indicesOffset--;
+        }
 
-            final MemorySegment rawName = DATA.asSlice(linestart, semicolon - linestart);
-            System.err.println(STR."`\{new String(rawName.toArray(ValueLayout.JAVA_BYTE))}`");
+        for (int offset = 0; offset < indicesOffset; offset += 2) {
+            final long semicolon = indices.getAtIndex(ValueLayout.JAVA_LONG, offset);
+            final long linefeed = indices.getAtIndex(ValueLayout.JAVA_LONG, offset + 1);
+
+            final MemorySegment rawName = CHUNKS.asSlice(linestart, semicolon - linestart);
 
             // NOTE: Four different temperature numbers are possible in the interval [-99.9, 99.9]
             // as long as the fractional digit is always present:
@@ -88,19 +134,22 @@ public class CalculateAverage_fuzzypixelz {
             // ` -Y.X` (4 bytes)
             // ` ZY.X` (4 bytes)
             // `-ZY.X` (5 bytes)
-            // Nothing to be done when length == 3 ^_^
             final long rawTempLength = linefeed - semicolon - 1;
-            final byte x = DATA.get(ValueLayout.JAVA_BYTE, linefeed - 1);
-            final byte y = DATA.get(ValueLayout.JAVA_BYTE, linefeed - 3);
-            final byte z = DATA.get(ValueLayout.JAVA_BYTE, linefeed - 4);
+            final byte x = CHUNKS.get(ValueLayout.JAVA_BYTE, linefeed - 1);
+            final byte y = CHUNKS.get(ValueLayout.JAVA_BYTE, linefeed - 3);
+            final byte z = CHUNKS.get(ValueLayout.JAVA_BYTE, linefeed - 4);
             int temp = (y - ZERO) * 10 + (x - ZERO);
+            // Nothing left to be done if length == 3 ^_^
             final boolean rawTempSizeEq4 = rawTempLength == 4;
             final boolean rawTempSizeEq5 = rawTempLength == 5;
             final boolean zEqDash = z == DASH;
             // To atone for your lack of boolean to int casts, your shall optimize this code Java!
             temp += ((z - ZERO) * 100) * ((rawTempSizeEq4 && !zEqDash) || rawTempSizeEq5 ? 1 : 0);
             temp *= -1 * ((rawTempSizeEq4 && zEqDash) || rawTempSizeEq5 ? 1 : -1);
-            System.err.println(STR."`\{((double) temp) / 10}`");
+
+            if (threadNumber == threadDebugged) {
+                System.err.println(STR."@thread-\{threadNumber}: `\{new String(rawName.toArray(ValueLayout.JAVA_BYTE))};\{((double) temp) / 10}`");
+            }
 
             linestart = linefeed + 1;
         }
@@ -114,18 +163,19 @@ public class CalculateAverage_fuzzypixelz {
     private static final String MEASUREMENTS_PATH = "./measurements.txt";
     private static final FileChannel FILE;
     private static final long FILE_SIZE;
-    private static final MemorySegment DATA;
+    private static final MemorySegment CHUNKS;
     static {
         try {
             FILE = FileChannel.open(Paths.get(MEASUREMENTS_PATH));
             FILE_SIZE = FILE.size();
-            DATA = FILE.map(FileChannel.MapMode.READ_ONLY, 0, FILE_SIZE, ARENA);
+            CHUNKS = FILE.map(FileChannel.MapMode.READ_ONLY, 0, FILE_SIZE, ARENA);
         }
         catch (IOException exception) {
             throw new RuntimeException("No measurements? >:(", exception);
         }
     }
-    private static final MemorySegment INDICES = ARENA.allocateArray(ValueLayout.JAVA_LONG, (FILE_SIZE / 6) + 8);
+    private static final int AVAILABLE_PROCESSORS = Runtime.getRuntime().availableProcessors();
+    private static final long CHUNK_SIZE = Math.ceilDiv(CHUNKS.byteSize(), AVAILABLE_PROCESSORS);
 
     private static final byte LINEFEED = (byte) '\n';
     private static final byte SEMICOLON = (byte) ';';
