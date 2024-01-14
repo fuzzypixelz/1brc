@@ -16,6 +16,5 @@
 #
 
 
-JAVA_OPTS="--enable-preview --add-modules jdk.incubator.vector"
-/usr/bin/env time --format="time: %es, %MKB" \
-  java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_fuzzypixelz
+JAVA_OPTS="--enable-preview --add-modules jdk.incubator.vector  --enable-native-access=ALL-UNNAMED"
+time java $JAVA_OPTS --class-path target/average-1.0.0-SNAPSHOT.jar dev.morling.onebrc.CalculateAverage_fuzzypixelz
