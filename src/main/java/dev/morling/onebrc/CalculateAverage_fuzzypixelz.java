@@ -225,8 +225,7 @@ public class CalculateAverage_fuzzypixelz {
 
             if (entryName.address() == 0) {
                 put(index, name, temp, temp, temp, 1);
-            }
-            else {
+            } else {
                 update(index, entryName, temp);
             }
         }
@@ -265,8 +264,7 @@ public class CalculateAverage_fuzzypixelz {
             MemorySegment name = getName(index);
             if (name.address() == 0) {
                 return null;
-            }
-            else {
+            } else {
                 double min = table.get(ValueLayout.JAVA_DOUBLE, index * ENTRY_SIZE + MIN_OFFSET);
                 double max = table.get(ValueLayout.JAVA_DOUBLE, index * ENTRY_SIZE + MAX_OFFSET);
                 double sum = table.get(ValueLayout.JAVA_DOUBLE, index * ENTRY_SIZE + SUM_OFFSET);
@@ -289,16 +287,17 @@ public class CalculateAverage_fuzzypixelz {
     private static final FileChannel FILE;
     private static final long FILE_SIZE;
     private static final MemorySegment CHUNKS;
+
     static {
         try {
             FILE = FileChannel.open(Paths.get(MEASUREMENTS_PATH));
             FILE_SIZE = FILE.size();
             CHUNKS = FILE.map(FileChannel.MapMode.READ_ONLY, 0, FILE_SIZE, ARENA);
-        }
-        catch (IOException exception) {
+        } catch (IOException exception) {
             throw new RuntimeException("No measurements? >:(", exception);
         }
     }
+
     private static final int AVAILABLE_PROCESSORS = Runtime.getRuntime().availableProcessors();
     private static final long CHUNK_SIZE = Math.ceilDiv(CHUNKS.byteSize(), AVAILABLE_PROCESSORS);
 
